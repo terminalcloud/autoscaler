@@ -8,7 +8,7 @@ go build .
 USER_TOKEN=something
 ACCESS_TOKEN=something
 DOMAIN=zooxterminalcloud.com # e.g., terminal.com, ccterminal.com
-URL=http://www.$DOMAIN/api/v0.2/
+URL=https://www.$DOMAIN/api/v0.2/
 
 # don't shrink for 1 hour after starting
 TIME_TO_SHRINK=3600
