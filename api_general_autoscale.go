@@ -61,8 +61,10 @@ func (as *autoscaler) autoScale(out []*NodeInfo, pendC int, pendD int) {
 	for _, e := range out {
 		if !e.Status.Disabled && !e.Status.Terminate {
 			globtotal = globtotal + e.RamTotal
-			globused = globused + e.RamUsed
 			numActive++
+		}
+		if e.Status.Terminate || !e.Status.Disabled {
+			globused = globused + e.RamUsed
 		}
 	}
 
