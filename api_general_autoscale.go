@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"sort"
+
 	"github.com/Sirupsen/logrus"
 )
 
@@ -26,7 +28,7 @@ func NewGeneralAutoScaler(aa AdminAPI, filter string) AutoScaler {
 	if filter == "" {
 		panic("INVALID FILTER TYPE")
 	}
-	as := &autoscaler{aa, pdt, pct, 0, 0, filter}
+	as := &autoscaler{aa, pdt, pct, 10000, 0, filter}
 	return as
 }
 
@@ -52,22 +54,46 @@ func (as *autoscaler) Run() {
 
 }
 
+var (
+	history           []int = make([]int, 0)
+	containersHistory []int = make([]int, 0)
+)
+
+func Median(arr []int) int {
+	tmp := make([]int, len(arr))
+	// copy into a new array
+	copy(tmp, arr)
+	// compute median
+	sort.Ints(tmp)
+	// return it
+	return tmp[len(tmp)/2]
+}
+
+func AppendLimit(arr []int, max, val int) []int {
+	arr = append(arr, val)
+	if len(arr) > max {
+		arr = arr[len(arr)-max:]
+	}
+	return arr
+}
+
 func (as *autoscaler) autoScale(out []*NodeInfo, pendC int, pendD int) {
 
 	var globtotal int64
 	var globused int64
+	var containers int64
 	numActive := 0
 
 	for _, e := range out {
 		if !e.Status.Disabled && !e.Status.Terminate {
 			globtotal = globtotal + e.RamTotal
-			globused = globused + e.RamUsed
 			numActive++
 		}
+		globused = globused + e.RamUsed
+		containers = containers + e.ContainersTotal
 	}
 
-	log.Info("Pending Create : ", pendC, "&  Del tokens : ", pendD)
-	log.Info("Number of Active Nodes : ", numActive)
+	log.Printf("Creating: %d, Deleting: %d, Active: %d", pendC, pendD, numActive)
 
 	//Addd pending so we dont over provision
 	globtotal = globtotal + (int64(pendC) * *nodeTypeRamTotal)
@@ -80,32 +106,39 @@ func (as *autoscaler) autoScale(out []*NodeInfo, pendC int, pendD int) {
 			as.iterationsSinceCreate = 0
 		}
 	} else {
-
 		should_grow := false
 		should_shrink := false
-
-		ratio := float64(globused) / float64(globtotal)
-
-		log.Info("Pressure ratio: ", ratio)
-
-		if ratio > 0.80 {
-			log.Info("Growing cluster!")
+		var min_buffer int = 30000
+		history = AppendLimit(history, 30, int(globused))
+		containersHistory = AppendLimit(containersHistory, 30, int(containers))
+		//log.Printf("History: %#v", history)
+		log.Printf("ContainersHistory: %#v", containersHistory)
+		// wait till we have accumulated some history
+		median_used := Median(history)
+		median_containers := Median(containersHistory)
+		var diff int = int(globtotal) - median_used
+		//var shrink_threshold int = (int(*nodeTypeRamTotal) + 2*min_buffer)
+		futureActive := numActive + int(pendC)
+		growThreshold := 490 * futureActive
+		shrinkThreshold := 450 * (futureActive - 1) // will I have fewer than 500 after shrinking by 1? buffer of 50 per node, so if they launch 50*number of nodes quickly, we create
+		log.Printf("futureActive: %d median_containers: %d growThreshold %d shrinkThreshold:%d globtotal: %d  median_used: %d diff: %d min_buffer: %d iterationsSinceCreate: %d", futureActive, median_containers, growThreshold, shrinkThreshold, globtotal, median_used, diff, min_buffer, as.iterationsSinceCreate)
+		if median_containers > growThreshold {
+			log.Printf("Container Based: Growing cluster!: %d", growThreshold)
 			should_grow = true
+		} else if median_containers < shrinkThreshold {
+			log.Printf("Container Based: Shrinking cluster! %d", shrinkThreshold)
+			should_shrink = true
 		}
-
-		if globtotal > *nodeTypeRamTotal {
-			// imagine the ratio after shrinking
-			post_shrink_ratio := float64(globused) / float64(globtotal-*nodeTypeRamTotal)
-
-			log.Info("Post-shrink ram pressure ratio: ", post_shrink_ratio)
-			if post_shrink_ratio < 0.70 {
-				if as.iterationsSinceCreate >= min_iters_before_shrink {
-					fmt.Println("Shrinking cluster!")
-					should_shrink = true
-				} else {
-					log.Info("Would shrink but need to wait iters:", min_iters_before_shrink)
-				}
-			}
+		//if diff < min_buffer {
+		//	log.Info("Growing cluster!")
+		//	//should_grow = true
+		//} else if globtotal > *nodeTypeRamTotal {
+		//	if diff > shrink_threshold {
+		//	}
+		//}
+		if as.iterationsSinceCreate <= min_iters_before_shrink && should_shrink {
+			should_shrink = false
+			log.Info("Would shrink but need to wait: iterationsSinceCreate = ", as.iterationsSinceCreate, " <= ", min_iters_before_shrink)
 		}
 
 		as.performScaling(should_shrink, should_grow, out)
@@ -176,7 +209,7 @@ func (as *autoscaler) performScaling(should_shrink bool, should_grow bool, nodes
 		}
 	} else {
 		as.iterationsSinceCreate = as.iterationsSinceCreate + 1
-		log.Info("Iterations since last create: ", as.iterationsSinceCreate)
+		//log.Info("Iterations since last create: ", as.iterationsSinceCreate)
 	}
 }
 

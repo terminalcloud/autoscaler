@@ -29,10 +29,11 @@ var accessstoken *string
 var globalFail int
 
 type NodeInfo struct {
-	NodeIp   string
-	RamTotal int64
-	RamUsed  int64
-	Status   StatusInfo
+	NodeIp          string
+	RamTotal        int64
+	RamUsed         int64
+	ContainersTotal int64
+	Status          StatusInfo
 }
 
 type StatusInfo struct {
@@ -117,9 +118,9 @@ func main() {
 	var auto AutoScaler
 
 	if *policy == "general" {
-		auto = NewGeneralAutoScaler(aa,"default")
+		auto = NewGeneralAutoScaler(aa, "default")
 	} else if *policy == "gpu" {
-		auto = NewGeneralAutoScaler(aa,"gpu")
+		auto = NewGeneralAutoScaler(aa, "gpu")
 	} else {
 		panic("Invalid policy for autoscale")
 	}

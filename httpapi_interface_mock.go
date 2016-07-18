@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"github.com/satori/go.uuid"
 	"math/rand"
 	"strconv"
-	"fmt"
 )
 
 type AdminAPIMock struct {
@@ -41,13 +41,13 @@ func (aa *AdminAPIMock) DeleteHN(ip string) (string, error) {
 	return u1, nil
 }
 
-func (aa *AdminAPIMock) GetHNInfo(filter string) ([]*NodeInfo,int,int,int, error) {
-	return aa.Health, 0,0,0,nil
+func (aa *AdminAPIMock) GetHNInfo(filter string) ([]*NodeInfo, int, int, int, error) {
+	return aa.Health, 0, 0, 0, nil
 }
 
 func (aa *AdminAPIMock) ReqProgress(token string) (*Progress, error) {
 	fl := aa.internalReq[token]
-	p := Progress{fl.status,""}
+	p := Progress{fl.status, ""}
 	return &p, nil
 }
 
@@ -59,7 +59,7 @@ func (aa *AdminAPIMock) completeCreates() {
 			v.status = "success"
 			iplast := rand.Intn(200)
 			ip := "10.0.0." + strconv.Itoa(iplast)
-			newNode := NodeInfo{ip, *nodeTypeRamTotal, 1000, StatusInfo{false,false,false,false,false}}
+			newNode := NodeInfo{ip, *nodeTypeRamTotal, 1000, 1000 / 256, StatusInfo{false, false, false, false, false}}
 
 			//Adding new Node
 			aa.Health = append(aa.Health, &newNode)
@@ -111,7 +111,7 @@ func (aa *AdminAPIMock) populateHealth(load int64, numNodes int) {
 	for i := 0; i < numNodes; i++ {
 		iplast := rand.Intn(200)
 		ip := "10.0.0." + strconv.Itoa(iplast)
-		newNode := NodeInfo{ip, *nodeTypeRamTotal, load, StatusInfo{false,false,false,false,false}}
+		newNode := NodeInfo{ip, *nodeTypeRamTotal, load, load / 256, StatusInfo{false, false, false, false, false}}
 		newHealth = append(newHealth, &newNode)
 		newInternalInfo[ip] = newNode
 	}

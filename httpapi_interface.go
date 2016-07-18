@@ -144,7 +144,6 @@ func (aa *adminAPI) GetHNInfo(filter string) ([]*NodeInfo, int, int, int, error)
 
 				for info, value := range nodeInfoItems {
 					if info == "ram" {
-
 						ramInfo, isCorrectType := value.(map[string]interface{})
 						if !isCorrectType {
 							log.Error("Invalid Ram struct node")
@@ -169,6 +168,26 @@ func (aa *adminAPI) GetHNInfo(filter string) ([]*NodeInfo, int, int, int, error)
 						}
 						newNode.RamTotal = t
 						newNode.RamUsed = u
+					}
+					if info == "containers" {
+						ctInfo, isCorrectType := value.(map[string]interface{})
+						if !isCorrectType {
+							log.Error("Invalid containers struct node")
+							return nil, 0, 0, 0, errors.New("bad json")
+						}
+
+						total, isOkh := ctInfo["total"].(string)
+
+						if !isOkh {
+							log.Error("Invalid containers numbers for node")
+							return nil, 0, 0, 0, errors.New("bad json")
+						}
+
+						t, errInt := strconv.ParseInt(total, 10, 64)
+						if errInt != nil {
+							t = 0
+						}
+						newNode.ContainersTotal = t
 					}
 					if info == "status" {
 
