@@ -1,10 +1,11 @@
-package main
+package autoscaler
 
 import (
 	"fmt"
-	"github.com/satori/go.uuid"
 	"math/rand"
 	"strconv"
+
+	"github.com/satori/go.uuid"
 )
 
 type AdminAPIMock struct {
