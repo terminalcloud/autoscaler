@@ -1,10 +1,16 @@
 package autoscaler
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 var log = logrus.New()
@@ -223,6 +229,67 @@ func (as *autoscaler) pickLeastLoadedNotProtected(nodes []*NodeInfo) string {
 		}
 	}
 	return minip
+}
+
+func (as *autoscaler) pickOldestNotProtected(nodes []*NodeInfo) (string, error) {
+	// Create an EC2 service object in the "us-west-2" region
+	// Note that you can also configure your region globally by
+	// exporting the AWS_REGION environment variable
+	sess, err := session.NewSession()
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	d := ec2.DescribeInstancesInput{}
+	var jsonBlob = []byte(`{
+		"Filters": [{
+			"Name" : "instance-type",
+			"Values" : [ "r3.4xlarge" ]
+		},
+		{
+			"Name" : "instance-state-name",
+			"Values" : [ "running" ]
+		}]
+	}`)
+	json.Unmarshal(jsonBlob, &d)
+	svc := ec2.New(sess, &aws.Config{Region: aws.String("us-west-2")})
+	// Call the DescribeInstances Operation
+	resp, err := svc.DescribeInstances(&d)
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now()
+	ages := map[string]int64{}
+	// resp has all of the response data, pull out instance IDs:
+	count := 0
+	for _, res := range resp.Reservations {
+		for _, inst := range res.Instances {
+			if inst.PrivateIpAddress != nil {
+				ip := *inst.PrivateIpAddress
+				start := *inst.LaunchTime
+				ages[ip] = int64(now.Sub(start) / time.Minute)
+				log.Printf("%d %s %d minutes old\n", count, ip, ages[ip])
+			}
+		}
+	}
+
+	// find out age of all nodes
+	maxip := nodes[0].NodeIp
+	maxage := ages[maxip]
+	for _, e := range nodes {
+		age, ok := ages[e.NodeIp]
+		if !ok {
+			log.Println("COULD NOT FIND AGE for ", e.NodeIp)
+			return "", errors.New("missing age for node")
+		}
+		if age > maxage && e.Status.Disabled == false && e.Status.Protected == false {
+			maxage = age
+			maxip = e.NodeIp
+		}
+	}
+	log.Println("Oldest Ip:", maxip, maxage, "minutes old")
+	return maxip, nil
 }
 
 func (as *autoscaler) pickUnusedNotProtected(nodes []*NodeInfo) string {
