@@ -19,5 +19,5 @@ cd $( dirname "${BASH_SOURCE[0]}" )
 while true
 do
   ./slackpost $(cat slack_token) internal_codecademy "starting autoscaler"
-  autoscalerd -usertoken=$USER_TOKEN -accesstoken $ACCESS_TOKEN -apiurl $URL -frequency 20 -nodetype r3.4xlarge -nodetyperam 122792 -tts 60 -policy=general -nodestorage ephemeral 2>&1 | tee  autoscaler.log
+  ./autoscalerd/autoscalerd -usertoken=$USER_TOKEN -accesstoken $ACCESS_TOKEN -apiurl $URL -frequency 20 -nodetype r3.4xlarge -nodetyperam 122792 -tts 60 -policy=general -nodestorage ephemeral 2>&1 | tee  autoscaler.log
 done

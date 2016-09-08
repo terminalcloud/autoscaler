@@ -132,8 +132,12 @@ func (as *autoscaler) autoScale(out []*NodeInfo, pendC int, pendD int) {
 			log.Printf("Container Based: Growing cluster!: %d", growThreshold)
 			should_grow = true
 		} else if median_containers < shrinkThreshold {
-			log.Printf("Container Based: Shrinking cluster! %d", shrinkThreshold)
-			should_shrink = true
+			log.Printf("Container Based: Should Shrink cluster! %d", shrinkThreshold)
+			if pendC > 0 {
+				log.Println("Not shrinking, because we are creating")
+			} else {
+				should_shrink = true
+			}
 		}
 		//if diff < min_buffer {
 		//	log.Info("Growing cluster!")
@@ -203,9 +207,12 @@ func (as *autoscaler) performScaling(should_shrink bool, should_grow bool, nodes
 			if as.filter == "gpu" {
 				target = as.pickUnusedNotProtected(nodes)
 			} else {
-				target = as.pickLeastLoadedNotProtected(nodes)
+				var err error
+				target, err = as.pickOldestNotProtected(nodes)
+				log.Println("Selected ", target, " for deleting", err)
 			}
 			if target != "" {
+				log.Println("attemping to delete ", target)
 				if request_id, err := as.api.DeleteHN(target); err == nil && request_id != "" {
 					as.pendingDelToken = append(as.pendingDelToken, request_id)
 				} else {
@@ -231,14 +238,14 @@ func (as *autoscaler) pickLeastLoadedNotProtected(nodes []*NodeInfo) string {
 	return minip
 }
 
-func (as *autoscaler) pickOldestNotProtected(nodes []*NodeInfo) (string, error) {
+func GetInstanceAges() map[string]int64 {
 	// Create an EC2 service object in the "us-west-2" region
 	// Note that you can also configure your region globally by
 	// exporting the AWS_REGION environment variable
 	sess, err := session.NewSession()
 	if err != nil {
 		log.Println(err)
-		return "", err
+		return nil
 	}
 	d := ec2.DescribeInstancesInput{}
 	var jsonBlob = []byte(`{
@@ -256,9 +263,10 @@ func (as *autoscaler) pickOldestNotProtected(nodes []*NodeInfo) (string, error) 
 	// Call the DescribeInstances Operation
 	resp, err := svc.DescribeInstances(&d)
 	if err != nil {
-		return "", err
+		return nil
 	}
 
+	// find out age of all nodes
 	now := time.Now()
 	ages := map[string]int64{}
 	// resp has all of the response data, pull out instance IDs:
@@ -273,15 +281,21 @@ func (as *autoscaler) pickOldestNotProtected(nodes []*NodeInfo) (string, error) 
 			}
 		}
 	}
+	return ages
+}
 
-	// find out age of all nodes
+func (as *autoscaler) pickOldestNotProtected(nodes []*NodeInfo) (string, error) {
+	ages := GetInstanceAges()
+	if ages == nil {
+		return "", errors.New("cant get ages")
+	}
 	maxip := nodes[0].NodeIp
 	maxage := ages[maxip]
 	for _, e := range nodes {
 		age, ok := ages[e.NodeIp]
 		if !ok {
-			log.Println("COULD NOT FIND AGE for ", e.NodeIp)
-			return "", errors.New("missing age for node")
+			log.Println("No age for ", e.NodeIp, " skipping")
+			continue
 		}
 		if age > maxage && e.Status.Disabled == false && e.Status.Protected == false {
 			maxage = age

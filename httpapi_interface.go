@@ -85,6 +85,7 @@ func (aa *adminAPI) GetHNInfo(filter string) ([]*NodeInfo, int, int, int, error)
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
+	fmt.Println(string(out))
 
 	//Parse node struct
 	err = json.Unmarshal([]byte(out), &retJson)
